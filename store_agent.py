@@ -1,30 +1,42 @@
 import requests
+import sqlite3
 import pandas as pd
 from forecast_agent import DemandForecastingAgent
 
-# Load inventory data to extract product ID
-df_inventory = pd.read_csv("inventory_monitoring.csv")
+conn = sqlite3.connect("retail_data.db")
+df_inventory = pd.read_sql_query("SELECT * FROM inventory", conn)
+conn.close()
+
 product_id = str(df_inventory["Product ID"].iloc[0])
 
 class StoreAgent:
     def __init__(self):
-        self.store_stock = {product_id: 5}  # Simulated store stock
+        self.store_stock = {product_id: 95}  
         self.forecaster = DemandForecastingAgent()
 
     def check_and_request_stock(self):
-        if self.store_stock[product_id] < 10:
-            print("Store: Stock is low. Forecasting demand...")
-            predicted_demand = int(self.forecaster.predict_demand())  # Convert to Python int
-            print(f"Predicted demand based on sales data: {predicted_demand}")
-            print(f"Store: Predicted demand is {predicted_demand}, requesting restock.")
+        if self.store_stock[product_id] < 100:
+            print("Store: Stock is low.")
 
-            response = requests.post(
-                "http://127.0.0.1:5000/request_stock",
-                json={"item": str(product_id), "quantity": int(predicted_demand)}
-            )
-            print("Response from Warehouse:", response.json())
+            try:
+                pricing_response = requests.get("http://127.0.0.1:5003/get_pricing_recommendation")
+                pricing_data = pricing_response.json()
+                adjusted_demand = int(pricing_data["adjusted_restock_quantity"])
+                print(f"Recommended restock qty based on sales data: {adjusted_demand}")
+
+                response = requests.post(
+                    "http://127.0.0.1:5000/request_stock",
+                    json = {
+                        "item": str(product_id),
+                        "quantity": adjusted_demand
+                    }
+                )
+                print("Response from warehouse:", response.json())
+
+            except Exception as e:
+                print("Failed to contact pricing agent or warehouse", e)
         else:
-            print("Store: Stock level is sufficient.")
+            print("Stock level is sufficient.")
 
 if __name__ == '__main__':
     store = StoreAgent()
